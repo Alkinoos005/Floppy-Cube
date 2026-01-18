@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<style>
+    /* Styling the game canvas with a dark theme and gradient */
+    canvas {
+        border:1px solid #333;
+        background: linear-gradient(to bottom, #000000 0%, #004a7c 100%);
+        display: block;
+        margin-bottom: 10px;
+        position: relative;
+    }
+    /* Centers the control buttons */
+    .controls { text-align: center; width: 480px; }
+    /* Styles for the movement buttons */
+    button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #f1f1f1; border: 1px solid #ccc; }
+    /* Styles for the secret word input area */
+    .cheat-area { margin-top: 20px; padding: 10px; background: #eee; width: 460px; border-radius: 5px; }
+    #cheatInput { padding: 8px; width: 200px; }
+</style>
+</head>
+<body onload="startGame()">
+<script>
+
+// Global variables for game objects and states
+var myGamePiece;
+var myObstacles = [];
+var myScore;
+var myYellowCube; 
+var gameSpeed = 1;
+var scoreMultiplier = 1; 
+var marioSticker;
+var shakeDuration = 0; 
+var marioTimer = 0; 
+var particles = []; // Array to hold the trail particles
+
+function startGame() {
+    // Initializes the player piece (30x30 red square)
+    myGamePiece = new component(30, 30, "red", 10, 120);
+    // Initializes the score display at the top
+    myScore = new component("25px", "Consolas", "white", 200, 40, "text");
+    // Initializes the power-up cube (yellow)
+    myYellowCube = new component(20, 20, "yellow", -100, -100); 
+    // Initializes the Mario sticker in the center
+    marioSticker = new component("35px", "Arial", "gold", 100, 135, "text");
+    // Starts the game loop
+    myGameArea.start();
+}
+
+var myGameArea = {
+    canvas : document.createElement("canvas"),
+    start : function() {
+        this.canvas.width = 480;
+        this.canvas.height = 270;
+        this.context = this.canvas.getContext("2d");
+        document.body.insertBefore(this.canvas, document.body.childNodes[0]);
+        this.frameNo = 0;
+        // Sets the frame rate to 50 frames per second
+        this.interval = setInterval(updateGameArea, 20);
+        
+        // Listeners for keyboard controls
+        window.addEventListener('keydown', function (e) {
+            if (e.key == "ArrowUp") move('up');
+            if (e.key == "ArrowDown") move('down');
+            if (e.key == "ArrowLeft") move('left');
+            if (e.key == "ArrowRight") move('right');
+        });
+        // Stops movement when the key is released
+        window.addEventListener('keyup', function (e) { stopMove(); });
+    },
+    clear : function() {
+        // Wipes the canvas clean for the next frame
+        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    },
+    stop : function() { clearInterval(this.interval); }
+}
+
+// Function to handle the secret word activation
+function submitCheat() {
+    var input = document.getElementById("cheatInput").value;
+    // Checks if the user entered the specific word (ALK)
+    if (input === "ALK") {
+        if (myGameArea.frameNo < 10000) {
+            // First use: Jump to 10k score for Mario sticker
+            myGameArea.frameNo = 10000;
+            marioTimer = 500; 
+        } else {
+            // Second use: Jump to the grand finale
+            myGameArea.frameNo = 1000000;
+        }
+        document.getElementById("cheatInput").value = "";
+        document.activeElement.blur(); 
+    } else {
+        alert("Incorrect word! Try again.");
+    }
+}
+
+function component(width, height, color, x, y, type) {
+    this.type = type;
+    this.width = width;
+    this.height = height;
+    this.speedX = 0;
+    this.speedY = 0;    
+    this.x = x;
+    this.y = y;    
+    this.update = function() {
+        ctx = myGameArea.context;
+        if (this.type == "text") {
+            ctx.font = this.width + " " + this.height;
+            ctx.fillStyle = color;
+            ctx.fillText(this.text, this.x, this.y);
+        } else {
+            ctx.fillStyle = color;
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+        }
+    }
+    this.newPos = function() {
+        this.x += this.speedX;
+        this.y += this.speedY;        
+        this.checkRoofFloor(); 
+    }
+    this.checkRoofFloor = function() {
+        // LOSE CONDITION: Check if player hits the very top or very bottom
+        if (this.y <= 0 || this.y >= (myGameArea.canvas.height - this.height)) {
+            myGameArea.stop();
+            alert("BOUNDARY HIT! Game Over. Score: " + myGameArea.frameNo);
+        }
+    }
+    this.crashWith = function(otherobj) {
+        // Standard rectangular collision detection
+        var myleft = this.x; var myright = this.x + (this.width);
+        var mytop = this.y; var mybottom = this.y + (this.height);
+        var otherleft = otherobj.x; var otherright = otherobj.x + (otherobj.width);
+        var othertop = otherobj.y; var otherbottom = otherobj.y + (otherobj.height);
+        var crash = true;
+        if ((mybottom < othertop) || (mytop > otherbottom) || (myright < otherleft) || (myleft > otherright)) {
+            crash = false;
+        }
+        return crash;
+    }
+}
+
+function updateGameArea() {
+    var x, height, gap;
+    
+    // GRAND FINALE: 1,000,000 points reached
+    if (myGameArea.frameNo >= 1000000) {
+        myGameArea.clear();
+        myGameArea.stop();
+        ctx = myGameArea.context;
+        ctx.fillStyle = "white";
+        ctx.textAlign = "center";
+        ctx.font = "30px Arial";
+        ctx.fillText("👍 HUGE THUMBS UP! 👍", 240, 100);
+        ctx.font = "18px Georgia";
+        ctx.fillText("\"The Force is strong with this one.\"", 240, 150);
+        ctx.fillText("Level Accomplished.", 240, 180);
+        return;
+    }
+
+    // Screen shake logic (20 seconds duration)
+    if (shakeDuration > 0) {
+        var dx = Math.random() * 8 - 4;
+        var dy = Math.random() * 8 - 4;
+        myGameArea.canvas.style.transform = `translate(${dx}px, ${dy}px)`;
+        shakeDuration--;
+    } else {
+        myGameArea.canvas.style.transform = `translate(0px, 0px)`;
+    }
+
+    // Obstacle collision check
+    for (i = 0; i < myObstacles.length; i += 1) {
+        if (myGamePiece.crashWith(myObstacles[i])) {
+            myGameArea.stop();
+            alert("OBSTACLE COLLISION! Score: " + myGameArea.frameNo);
+            return;
+        } 
+    }
+
+    // Yellow Cube collection logic
+    if (myGamePiece.crashWith(myYellowCube)) {
+        gameSpeed = 2; 
+        scoreMultiplier = 2; 
+        shakeDuration = 1000; // 20 seconds of shaking
+        myYellowCube.x = -100; 
+    }
+
+    myGameArea.clear();
+    myGameArea.frameNo += scoreMultiplier;
+
+    // Particle effect logic (only if score is doubled)
+    if (scoreMultiplier > 1) {
+        particles.push({x: myGamePiece.x, y: myGamePiece.y + 15, life: 20});
+    }
+    for (var i = 0; i < particles.length; i++) {
+        var p = particles[i];
+        ctx.fillStyle = "rgba(255, 0, 0, " + (p.life / 20) + ")";
+        ctx.fillRect(p.x, p.y, 4, 4);
+        p.x -= 2; // Particles move left
+        p.life--;
+        if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    // Generating Obstacles
+    if (myGameArea.frameNo == 1 || everyinterval(150 / gameSpeed)) {
+        x = myGameArea.canvas.width;
+        height = Math.floor(Math.random()*(180-20+1)+20);
+        gap = Math.floor(Math.random()*(120-60+1)+60);
+        myObstacles.push(new component(10, height, "#00ffcc", x, 0));
+        myObstacles.push(new component(10, x - height - gap, "#00ffcc", x, height + gap));
+    }
+
+    // Generating Power-ups
+    if (everyinterval(500)) {
+        myYellowCube.x = myGameArea.canvas.width;
+        myYellowCube.y = Math.floor(Math.random() * (myGameArea.canvas.height - 20));
+    }
+
+    // Moving objects leftwards
+    myYellowCube.x -= 1 * gameSpeed;
+    myYellowCube.update();
+    for (i = 0; i < myObstacles.length; i += 1) {
+        myObstacles[i].x += -1 * gameSpeed;
+        myObstacles[i].update();
+    }
+
+    // Updating Score UI
+    myScore.text="SCORE: " + myGameArea.frameNo + (scoreMultiplier > 1 ? " (2X!)" : "");
+    myScore.update();
+
+    // Mario Sticker Timer logic (displays for 10 seconds)
+    if (myGameArea.frameNo >= 10000 && marioTimer === 0 && myGameArea.frameNo < 10100) {
+        marioTimer = 500; 
+    }
+    if (marioTimer > 0) {
+        marioSticker.text = "⭐ SUPER MARIO! ⭐";
+        marioSticker.update();
+        marioTimer--;
+    }
+    
+    // Position and redraw player
+    myGamePiece.newPos();
+    myGamePiece.update();
+}
+
+function everyinterval(n) {
+    if ((myGameArea.frameNo / n) % 1 == 0) {return true;}
+    return false;
+}
+
+function move(dir) {
+    if (dir == 'up') {myGamePiece.speedY = -3; }
+    if (dir == 'down') {myGamePiece.speedY = 3; }
+    if (dir == 'left') {myGamePiece.speedX = -3; }
+    if (dir == 'right') {myGamePiece.speedX = 3; }
+}
+
+function stopMove() {
+    myGamePiece.speedX = 0; myGamePiece.speedY = 0;
+}
+</script>
+
+<div class="controls">
+  <button onmousedown="move('up')" onmouseup="stopMove()">UP</button><br><br>
+  <button onmousedown="move('left')" onmouseup="stopMove()">LEFT</button>
+  <button onmousedown="move('right')" onmouseup="stopMove()">RIGHT</button><br><br>
+  <button onmousedown="move('down')" onmouseup="stopMove()">DOWN</button>
+</div>
+
+<p><b>WARNING:</b> Touching the top or bottom edge results in a crash!</p>
+
+<div class="cheat-area">
+    <p><b>Secret Activation:</b> (Find the word to jump scores)</p>
+    <input type="text" id="cheatInput" placeholder="Type here...">
+    <button onclick="submitCheat()">Activate</button>
+</div>
+
+</body>
+</html>
+</html>
